@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArtworkResponse, GamePieceResponse, ElementEnum } from "../types";
+import { apiFetch, getToken } from "../lib/api";
 
 const ELEMENTS: ElementEnum[] = [
   "Fire", "Grass", "Water", "Electric", "Air", "Earth", "Neutral",
@@ -44,11 +45,16 @@ export default function Dashboard() {
   const [baseAtk, setBaseAtk] = useState(10);
 
   useEffect(() => {
-    fetch(`${API_BASE}/artworks`)
+    // Redirect to login if no token
+    if (!getToken()) {
+      router.push("/login");
+      return;
+    }
+    apiFetch("/artworks")
       .then((r) => r.json())
       .then((data) => setArtworks(data))
       .catch(() => setError("Failed to load artworks."));
-  }, []);
+  }, [router]);
 
   // Persist pieces to sessionStorage whenever they change
   useEffect(() => {
@@ -69,9 +75,8 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/pieces`, {
+      const res = await apiFetch("/pieces", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           artwork_id: selectedArtwork.id,
           name,

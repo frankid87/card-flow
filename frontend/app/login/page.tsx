@@ -1,0 +1,73 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [apiKey, setApiKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const form = new URLSearchParams();
+      form.append("username", "cardflow");
+      form.append("password", apiKey);
+
+      const res = await fetch(`${API_BASE}/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+
+      if (!res.ok) throw new Error("API key non valida");
+
+      const data = await res.json();
+      sessionStorage.setItem("jwt_token", data.access_token);
+      router.push("/");
+    } catch {
+      setError("API key non valida. Riprova.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f3f4f6" }}>
+      <div style={{ backgroundColor: "white", padding: "2rem", borderRadius: "12px", boxShadow: "0 4px 20px rgba(0,0,0,0.1)", width: "320px" }}>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: "bold", marginBottom: "0.5rem" }}>CardFlow</h1>
+        <p style={{ color: "#6b7280", marginBottom: "1.5rem", fontSize: "0.9rem" }}>Inserisci la API key per accedere</p>
+
+        {error && (
+          <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#dc2626", borderRadius: "6px", marginBottom: "1rem", fontSize: "0.85rem" }}>
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <input
+            type="password"
+            placeholder="API Key"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            required
+            style={{ border: "1px solid #d1d5db", borderRadius: "6px", padding: "0.5rem 0.75rem", fontSize: "1rem" }}
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "6px", padding: "0.6rem", fontWeight: "bold", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1 }}
+          >
+            {loading ? "Accesso…" : "Accedi"}
+          </button>
+        </form>
+      </div>
+    </main>
+  );
+}

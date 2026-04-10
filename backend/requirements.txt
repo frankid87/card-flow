@@ -7,3 +7,6 @@ gunicorn
 hypothesis
 pytest
 httpx
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart

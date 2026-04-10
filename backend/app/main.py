@@ -1,11 +1,13 @@
 import os
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import SQLModel, create_engine
 from starlette.responses import JSONResponse
 
 from app.routers.artworks import router as artworks_router
 from app.routers.pieces import router as pieces_router
+from app.auth import create_access_token, verify_token, VALID_API_KEY
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
@@ -28,7 +30,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    SQLModel.metadata.create_all(engine)
+    SQLModel.metadata.create_all(engine, checkfirst=True)
 
 
 @app.exception_handler(HTTPException)
@@ -44,10 +46,20 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
-app.include_router(artworks_router)
-app.include_router(pieces_router)
+@app.post("/token")
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Exchange API key for a JWT. Use the API key as the password field."""
+    if form_data.password != VALID_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    token = create_access_token({"sub": "cardflow-client"})
+    return {"access_token": token, "token_type": "bearer"}
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# Protected routers
+app.include_router(artworks_router, dependencies=[Depends(verify_token)])
+app.include_router(pieces_router, dependencies=[Depends(verify_token)])
