@@ -1,0 +1,4 @@
+# file: /Users/francescocinquepalmi/git-hx/card_flow/backend/app/utils/damage.py
+# hypothesis_version: 6.141.1
+
+[0.5, 1.0, 2.0, 'Air', 'Earth', 'Electric', 'Fire', 'Grass', 'Water']

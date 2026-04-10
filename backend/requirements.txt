@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+psycopg2-binary
+pydantic
+gunicorn
+hypothesis
+pytest
+httpx
