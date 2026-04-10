@@ -1,0 +1,24 @@
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.hypothesis/
+backend/.pytest_cache/
+backend/.hypothesis/
+
+# Env
+.env
+.env.local
+*.env
+
+# Docker
+*.log
+
+# OS
+.DS_Store

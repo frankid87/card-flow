@@ -1,4 +1,0 @@
-# file: /Users/francescocinquepalmi/git-hx/card_flow/backend/app/schemas.py
-# hypothesis_version: 6.141.1
-
-['Air', 'Earth', 'Electric', 'Fire', 'Grass', 'Neutral', 'Water', 'from_attributes', 'image_url']
