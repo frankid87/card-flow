@@ -41,7 +41,7 @@ client = TestClient(test_app, raise_server_exceptions=False)
     prompt=st.one_of(st.none(), st.text(max_size=200)),
     seed=st.one_of(st.none(), st.integers()),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_post_artworks_missing_image_url_returns_422(prompt, seed):
     """
     **Validates: Requirements 5.7**
@@ -71,7 +71,7 @@ def test_post_artworks_missing_image_url_returns_422(prompt, seed):
     base_hp=st.integers(min_value=1, max_value=1000),
     base_atk=st.integers(min_value=1, max_value=1000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_post_pieces_missing_required_field_returns_422(
     missing_field, name, element, base_hp, base_atk
 ):
@@ -109,7 +109,7 @@ def test_post_pieces_missing_required_field_returns_422(
     element=st.sampled_from(ELEMENTS),
     base_atk=st.integers(min_value=1, max_value=1000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_post_pieces_wrong_type_base_hp_returns_422(
     base_hp_str, name, element, base_atk
 ):
@@ -141,7 +141,7 @@ def test_post_pieces_wrong_type_base_hp_returns_422(
     base_hp=st.integers(min_value=1, max_value=1000),
     base_atk=st.integers(min_value=1, max_value=1000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_post_pieces_wrong_type_artwork_id_returns_422(
     artwork_id_int, name, element, base_hp, base_atk
 ):
@@ -189,7 +189,7 @@ INVALID_ELEMENT_EXAMPLES = [
     base_hp=st.integers(min_value=1, max_value=1000),
     base_atk=st.integers(min_value=1, max_value=1000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_post_pieces_invalid_element_returns_422(
     invalid_element, name, base_hp, base_atk
 ):

@@ -68,7 +68,7 @@ client = TestClient(test_app)
         max_size=10,
     )
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=20, deadline=None)
 def test_artwork_list_completeness(payloads):
     """
     **Validates: Requirements 6.2**

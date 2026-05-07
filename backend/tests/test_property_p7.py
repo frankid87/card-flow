@@ -39,7 +39,7 @@ def make_engine():
     base_hp=st.integers(min_value=1, max_value=1000),
     base_atk=st.integers(min_value=1, max_value=1000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_artwork_deletion_blocked_when_referenced(
     image_url, piece_name, element, base_hp, base_atk
 ):

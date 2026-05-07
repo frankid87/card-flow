@@ -9,6 +9,8 @@ services:
       POSTGRES_DB: cardflow
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cardflow"]
       interval: 5s
@@ -21,8 +23,13 @@ services:
     environment:
       DATABASE_URL: postgresql://cardflow:cardflow@postgres:5432/cardflow
       PORT: "8000"
+      API_SECRET_KEY: askatasun
+      API_KEY: kitevivo
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
+
+volumes:
+  postgres_data:

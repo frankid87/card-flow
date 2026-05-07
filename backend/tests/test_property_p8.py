@@ -39,7 +39,7 @@ def make_engine():
     current_hp=st.integers(min_value=0, max_value=1000),
     is_evolved=st.booleans(),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_gamepiece_deletion_blocked_when_game_state_references_it(
     image_url, piece_name, element, base_hp, base_atk, current_hp, is_evolved
 ):

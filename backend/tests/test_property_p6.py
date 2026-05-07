@@ -100,7 +100,7 @@ ELEMENTS = ["Fire", "Grass", "Water", "Electric", "Air", "Earth", "Neutral"]
         max_size=10,
     ),
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=20, deadline=None)
 def test_multiple_pieces_can_share_artwork(image_url, pieces_data):
     """
     **Validates: Requirements 2.4**

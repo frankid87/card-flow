@@ -5,16 +5,25 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+import bcrypt
 
 # Secret key — set API_SECRET_KEY in environment, fallback for dev only
 SECRET_KEY = os.environ.get("API_SECRET_KEY", "dev-secret-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
-# The valid API key to exchange for a JWT — set API_KEY in environment
+# Legacy API key (kept for backward compatibility / admin access)
 VALID_API_KEY = os.environ.get("API_KEY", "cardflow-dev-key")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

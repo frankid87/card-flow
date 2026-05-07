@@ -19,9 +19,10 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   });
 
   if (res.status === 401) {
-    // Token expired or invalid — redirect to login
+    // Token expired or invalid — redirect to login, preserving current URL
     sessionStorage.removeItem("jwt_token");
-    window.location.href = "/login";
+    const redirect = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login?redirect=${redirect}`;
   }
 
   return res;

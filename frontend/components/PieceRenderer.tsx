@@ -1,28 +1,38 @@
+import { useState } from "react";
 import { GamePieceResponse } from "../types";
 import HP_Bar from "./HP_Bar";
 import Element_Icon from "./Element_Icon";
 import Evolved_Crown from "./Evolved_Crown";
-
-const PLACEHOLDER = "/placeholder-piece.png";
 
 interface PieceRendererProps {
   data: GamePieceResponse;
   state: { current_hp: number; is_evolved: boolean };
 }
 
+/** SVG data URI for a fallback piece icon (a simple circle with a ?) */
+function fallbackSvgUri(name: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+    <circle cx="32" cy="32" r="30" fill="#d1d5db" stroke="#9ca3af" stroke-width="2"/>
+    <text x="32" y="42" text-anchor="middle" font-size="28" fill="#6b7280" font-family="sans-serif">${name.charAt(0).toUpperCase()}</text>
+  </svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 export default function PieceRenderer({ data, state }: PieceRendererProps) {
-  const imageUrl = data.artwork?.image_url || PLACEHOLDER;
+  const [imgSrc, setImgSrc] = useState<string>(
+    data.artwork?.image_url || fallbackSvgUri(data.name)
+  );
 
   return (
     <div className="relative w-full h-full">
-      {/* Circular piece image */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={imageUrl}
+        src={imgSrc}
         alt={data.name}
         className="w-full h-full rounded-full object-cover"
-        onError={(e) => {
-          (e.currentTarget as HTMLImageElement).src = PLACEHOLDER;
+        onError={() => {
+          // Fallback to SVG if image fails to load
+          setImgSrc(fallbackSvgUri(data.name));
         }}
       />
 

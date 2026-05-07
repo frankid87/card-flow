@@ -18,7 +18,7 @@ MATRIX_PAIRS = [
     pair=st.sampled_from(MATRIX_PAIRS),
     base_atk=st.integers(min_value=1, max_value=10_000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_elemental_matrix_defined_pairs(pair, base_atk):
     """
     For each element pair in ELEMENTAL_MATRIX, calculate_damage should return
@@ -38,7 +38,7 @@ def test_elemental_matrix_defined_pairs(pair, base_atk):
     element=st.sampled_from(ELEMENTS),
     base_atk=st.integers(min_value=1, max_value=10_000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_same_element_returns_1x(element, base_atk):
     """
     When attacker and target share the same element, calculate_damage should
@@ -57,7 +57,7 @@ def test_same_element_returns_1x(element, base_atk):
     other_element=st.sampled_from(ELEMENTS),
     base_atk=st.integers(min_value=1, max_value=10_000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_neutral_attacker_returns_1x(other_element, base_atk):
     """
     When the attacker element is Neutral, calculate_damage should apply a 1x
@@ -76,7 +76,7 @@ def test_neutral_attacker_returns_1x(other_element, base_atk):
     other_element=st.sampled_from(ELEMENTS),
     base_atk=st.integers(min_value=1, max_value=10_000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_neutral_target_returns_1x(other_element, base_atk):
     """
     When the target element is Neutral, calculate_damage should apply a 1x

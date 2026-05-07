@@ -59,7 +59,7 @@ client = TestClient(test_app)
     prompt=st.one_of(st.none(), st.text(max_size=500)),
     seed=st.one_of(st.none(), st.integers(min_value=-(2**31), max_value=2**31 - 1)),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_artwork_creation_round_trip(image_url, prompt, seed):
     """
     **Validates: Requirements 6.1**

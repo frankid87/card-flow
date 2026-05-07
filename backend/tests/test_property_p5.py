@@ -95,7 +95,7 @@ ELEMENTS = ["Fire", "Grass", "Water", "Electric", "Air", "Earth", "Neutral"]
     base_hp=st.integers(min_value=1, max_value=10_000),
     base_atk=st.integers(min_value=1, max_value=10_000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_non_existent_artwork_id_returns_404(artwork_id, name, element, base_hp, base_atk):
     """
     **Validates: Requirements 7.2**

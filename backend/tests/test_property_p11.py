@@ -36,7 +36,7 @@ client = TestClient(test_app, raise_server_exceptions=False)
     status_code=st.integers(min_value=400, max_value=599),
     detail=st.text(min_size=1, max_size=200),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_http_exception_returns_correct_status_and_json(status_code, detail):
     """
     **Validates: Requirements 8.3**

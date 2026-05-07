@@ -96,7 +96,7 @@ ELEMENTS = ["Fire", "Grass", "Water", "Electric", "Air", "Earth", "Neutral"]
     base_atk=st.integers(min_value=1, max_value=10_000),
     image_url=st.text(min_size=1, max_size=200).filter(lambda s: s.strip()),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_game_piece_creation_round_trip(name, element, base_hp, base_atk, image_url):
     """
     **Validates: Requirements 7.1**

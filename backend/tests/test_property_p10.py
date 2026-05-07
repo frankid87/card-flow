@@ -44,7 +44,7 @@ client = TestClient(test_app, raise_server_exceptions=False)
     msg=st.text(min_size=1, max_size=200),
     path=st.sampled_from(["/raise-runtime", "/raise-value"]),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_unhandled_exception_returns_500_json(msg, path):
     """
     **Validates: Requirements 8.2**

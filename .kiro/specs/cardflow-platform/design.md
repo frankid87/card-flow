@@ -15,6 +15,8 @@ CardFlow is a full-stack monorepo platform for creating and managing AI-generate
 - All game-specific visual rendering is done via React overlay components layered over a circular base `<img>` tag. No image manipulation occurs server-side.
 - The FastAPI backend uses a global exception handler to ensure all error responses are JSON, never HTML.
 - Damage calculation is a pure utility function (`calculate_damage`) that applies the Elemental Matrix deterministically.
+- **Game session management is fully server-side.** The frontend is a pure rendering layer: it sends moves to the backend and re-renders from the returned `SessionResponse`. No game logic lives in the browser.
+- The Minimax AI runs entirely on the backend, invoked automatically after each player move in `pvc` mode before the response is returned.
 
 ---
 
@@ -24,8 +26,9 @@ CardFlow is a full-stack monorepo platform for creating and managing AI-generate
 graph TD
     subgraph Frontend [Next.js 14 Frontend]
         Dashboard[Dashboard Page]
+        GamePage[Game Page]
         PieceRenderer[PieceRenderer Component]
-        Board[Board Component 8x8]
+        Board[Board Component 8x8 - pure render]
         HP_Bar[HP_Bar Overlay]
         Element_Icon[Element_Icon Overlay]
         Evolved_Crown[Evolved_Crown Overlay]
@@ -34,6 +37,9 @@ graph TD
     subgraph Backend [FastAPI Backend]
         ArtworksRouter[/artworks router]
         PiecesRouter[/pieces router]
+        GameRouter[/game router]
+        SessionManager[Session_Manager service]
+        MinimaxAI[Minimax_AI engine]
         ErrorHandler[Global Error Handler]
         CalcDamage[calculate_damage utility]
     end
@@ -41,11 +47,16 @@ graph TD
     subgraph DB [PostgreSQL]
         ArtworksTable[(artworks)]
         GamePiecesTable[(game_pieces)]
-        GameStateTable[(game_state)]
+        GameSessionTable[(game_sessions)]
     end
 
     Dashboard -->|GET /artworks| ArtworksRouter
     Dashboard -->|POST /pieces| PiecesRouter
+    GamePage -->|POST /game/session| GameRouter
+    GamePage -->|GET /game/{id}/valid-moves/{pid}| GameRouter
+    GamePage -->|POST /game/{id}/move| GameRouter
+    GamePage -->|GET /game/{id}| GameRouter
+    GamePage --> Board
     Board --> PieceRenderer
     PieceRenderer --> HP_Bar
     PieceRenderer --> Element_Icon
@@ -54,20 +65,28 @@ graph TD
     ArtworksRouter --> ArtworksTable
     PiecesRouter --> GamePiecesTable
     GamePiecesTable -->|FK artwork_id| ArtworksTable
-    GameStateTable -->|FK piece_id| GamePiecesTable
+    GameRouter --> SessionManager
+    SessionManager --> GameSessionTable
+    SessionManager --> CalcDamage
+    SessionManager --> MinimaxAI
 
     ErrorHandler -.->|wraps| ArtworksRouter
     ErrorHandler -.->|wraps| PiecesRouter
-    CalcDamage -.->|used by| Board
+    ErrorHandler -.->|wraps| GameRouter
 ```
 
-**Request flow:**
+**Request flow — piece creation (unchanged):**
 1. The Dashboard fetches all artworks on load.
 2. User selects an artwork and fills in piece stats (name, element, base_hp, base_atk).
 3. Frontend submits a `POST /pieces` request.
 4. Backend validates via Pydantic, persists via SQLModel, returns a `GamePieceResponse` with joined artwork data.
 5. Frontend passes the response to `PieceRenderer`, which renders the circular token with HP_Bar, Element_Icon, and Evolved_Crown overlays.
-6. During a match, the Board component manages `GameState` locally and invokes `calculate_damage` on attacks.
+
+**Request flow — game session (new):**
+1. Game page calls `POST /game/session` with piece IDs and game mode; backend creates session, assigns initial positions, returns `SessionResponse`.
+2. Player selects a piece; frontend calls `GET /game/{session_id}/valid-moves/{piece_id}`; backend returns valid destination squares; frontend highlights them.
+3. Player clicks a destination; frontend calls `POST /game/{session_id}/move`; backend validates, applies the move (and the AI move in `pvc` mode), returns updated `SessionResponse`.
+4. Frontend re-renders the board entirely from the `SessionResponse` — no local game state.
 
 ---
 
@@ -91,6 +110,25 @@ GET  /artworks    → list[ArtworkResponse] (200)
 POST /pieces      → GamePieceCreate → GamePieceResponse (201)
 GET  /pieces      → list[GamePieceResponse] (200)
 ```
+
+#### Game Router (`backend/app/routers/game.py`)
+```
+POST /game/session                          → SessionCreateRequest → SessionResponse (201)
+GET  /game/{session_id}                     → SessionResponse (200)
+POST /game/{session_id}/move                → MoveRequest → SessionResponse (200)
+GET  /game/{session_id}/valid-moves/{piece_id} → ValidMovesResponse (200)
+```
+
+#### Session Manager (`backend/app/services/session_manager.py`)
+- `create_session(request: SessionCreateRequest) -> GameSession` — validates piece IDs, assigns initial positions, persists session
+- `get_session(session_id: UUID) -> GameSession` — retrieves session or raises 404
+- `apply_move(session_id: UUID, move: MoveRequest) -> GameSession` — validates turn ownership, validates move legality, applies move, triggers AI move in `pvc` mode
+- `get_valid_moves(session_id: UUID, piece_id: UUID) -> list[tuple[int, int]]` — returns legal destinations for the piece
+
+#### Minimax AI (`backend/app/services/minimax.py`)
+- `best_move(session: GameSession, depth: int) -> MoveRequest | None` — returns the best move for the computer player using alpha-beta Minimax
+- `evaluate(session: GameSession) -> float` — heuristic: `(player_piece_count * 10 + player_hp_total + player_advancement) - (opponent_piece_count * 10 + opponent_hp_total + opponent_advancement)`
+- Advancement score: sum of row progress for each piece toward the opponent's last row
 
 #### Damage Utility (`backend/app/utils/damage.py`)
 ```python
@@ -148,14 +186,17 @@ interface Element_IconProps { element: string; }
 #### Board (`frontend/components/Board.tsx`)
 ```typescript
 interface BoardProps {
-  pieces: Array<{ piece: GamePieceResponse; state: GameState; position: [number, number]; owner: 'player' | 'opponent' }>;
+  boardState: BoardPieceState[];
+  sessionId: string;
+  currentTurn: "player" | "opponent";
+  winner: string | null;
 }
 ```
-- Renders an 8×8 grid of alternating light/dark squares via Tailwind CSS
-- Places each active piece on its square using `PieceRenderer`
-- On piece selection, computes valid diagonal moves (forward only; forward + backward if evolved)
-- On move to an occupied opponent square, invokes `calculate_damage` and updates `current_hp`
-- Removes pieces with `current_hp <= 0`; sets `is_evolved = true` when a piece reaches the opponent's last row
+- Pure rendering component: receives `boardState` from parent, emits `onMove(pieceId, toPosition)` and `onPieceSelect(pieceId)` callbacks
+- On piece selection, calls `GET /game/{session_id}/valid-moves/{piece_id}` and highlights returned squares
+- On destination click, calls `POST /game/{session_id}/move` and passes updated `SessionResponse` up to parent
+- Disables interaction while an API call is in progress
+- Renders each piece using `PieceRenderer`; derives all visual state from `boardState` prop
 
 ---
 
@@ -190,6 +231,24 @@ interface BoardProps {
 | piece_id   | UUID    | NOT NULL, FK → game_pieces.id RESTRICT       |
 | current_hp | INTEGER | NOT NULL                                     |
 | is_evolved | BOOLEAN | NOT NULL, DEFAULT false                      |
+
+**Referential integrity:**
+- `game_pieces.artwork_id` uses `ON DELETE RESTRICT` — artwork deletion blocked when pieces reference it (Req 1.4).
+- `game_state.piece_id` uses `ON DELETE RESTRICT` — piece deletion blocked when game_state rows reference it (Req 3.4).
+
+### `game_sessions` table
+
+| Column      | Type    | Constraints                                      |
+|-------------|---------|--------------------------------------------------|
+| id          | UUID    | PK, default gen_random_uuid()                    |
+| game_mode   | VARCHAR | NOT NULL, CHECK IN ('pvp', 'pvc')                |
+| current_turn| VARCHAR | NOT NULL, CHECK IN ('player', 'opponent')        |
+| winner      | VARCHAR | NULLABLE, CHECK IN ('player', 'opponent')        |
+| board_state | JSONB   | NOT NULL — serialized list of `BoardPieceState`  |
+| ai_depth    | INTEGER | NOT NULL, DEFAULT 3                              |
+| created_at  | TIMESTAMPTZ | NOT NULL, DEFAULT now()                      |
+
+The `board_state` column stores the full list of `BoardPieceState` objects as JSONB. This avoids a separate join table for session-scoped piece positions and keeps session reads to a single row fetch.
 
 **Referential integrity:**
 - `game_pieces.artwork_id` uses `ON DELETE RESTRICT` — artwork deletion blocked when pieces reference it (Req 1.4).
@@ -256,6 +315,44 @@ class GameStateCreate(BaseModel):
 
 class GameStateResponse(GameStateCreate):
     id: uuid.UUID
+
+# --- Game Session Schemas ---
+
+class GameModeEnum(str, Enum):
+    pvp = "pvp"
+    pvc = "pvc"
+
+class OwnerEnum(str, Enum):
+    player = "player"
+    opponent = "opponent"
+
+class BoardPieceState(BaseModel):
+    piece_id: uuid.UUID
+    owner: OwnerEnum
+    position: list[int]          # [row, col]
+    current_hp: int = Field(ge=0)
+    is_evolved: bool = False
+
+class SessionCreateRequest(BaseModel):
+    player_piece_ids: list[uuid.UUID]
+    opponent_piece_ids: list[uuid.UUID]
+    game_mode: GameModeEnum
+    ai_depth: int = Field(default=3, gt=0)
+
+class SessionResponse(BaseModel):
+    session_id: uuid.UUID
+    game_mode: GameModeEnum
+    current_turn: OwnerEnum
+    winner: Optional[str] = None
+    board_state: list[BoardPieceState]
+
+class MoveRequest(BaseModel):
+    piece_id: uuid.UUID
+    to_position: list[int]       # [row, col]
+
+class ValidMovesResponse(BaseModel):
+    piece_id: uuid.UUID
+    moves: list[list[int]]       # list of [row, col]
 ```
 
 ### Elemental Matrix and `calculate_damage`
@@ -457,6 +554,78 @@ Same-element pairs and any pair involving Neutral are not in the matrix, so they
 
 ---
 
+### Property 22: Session creation round-trip
+
+*For any* valid `SessionCreateRequest` with existing piece IDs, `POST /game/session` should return a `SessionResponse` whose `board_state` contains exactly all the specified pieces, each with `current_hp` equal to the piece's `base_hp`, `is_evolved` equal to false, and positions within the correct initial rows (player: rows 5–7, opponent: rows 0–2).
+
+**Validates: Requirements 15.1, 15.2, 15.4**
+
+---
+
+### Property 23: Valid moves consistency — server matches checkers rules
+
+*For any* board state in a Game_Session, the list returned by `GET /game/{session_id}/valid-moves/{piece_id}` should be exactly the set of legal diagonal destinations computed by the checkers movement rules: forward diagonals for normal pieces, forward and backward diagonals for evolved pieces, with jump moves available when an opponent occupies the intermediate square and the landing square is empty.
+
+**Validates: Requirements 18.1, 18.4**
+
+---
+
+### Property 24: Move application preserves board invariants
+
+*For any* valid move applied via `POST /game/{session_id}/move`, the resulting `board_state` should satisfy: (1) no two pieces share the same position, (2) the moved piece is at `to_position`, (3) total piece count is either unchanged (non-attack move) or decreased by exactly one (attack that kills), and (4) `current_turn` has switched to the other player.
+
+**Validates: Requirements 17.1, 17.5, 17.6, 17.8**
+
+---
+
+### Property 25: Attack damage applied correctly server-side
+
+*For any* attack move, the target piece's `current_hp` in the returned `SessionResponse` should equal `max(0, previous_hp - calculate_damage(attacker.element, target.element, attacker.base_atk))`, and the target should be absent from `board_state` if and only if the resulting HP is zero or below.
+
+**Validates: Requirements 17.6, 17.7**
+
+---
+
+### Property 26: Evolution triggered server-side on last row
+
+*For any* move that places a player piece on row 0 or an opponent piece on row 7, the `is_evolved` field for that piece in the returned `SessionResponse` should be true.
+
+**Validates: Requirements 17.7**
+
+---
+
+### Property 27: Invalid move rejected with 400
+
+*For any* move request where `to_position` is not in the list returned by `GET /game/{session_id}/valid-moves/{piece_id}`, `POST /game/{session_id}/move` should return HTTP 400 with a JSON error body.
+
+**Validates: Requirements 17.4**
+
+---
+
+### Property 28: Wrong-turn move rejected with 400
+
+*For any* move request where the `piece_id` belongs to the player whose turn it is NOT, `POST /game/{session_id}/move` should return HTTP 400 with a JSON error body.
+
+**Validates: Requirements 17.3**
+
+---
+
+### Property 29: Minimax AI always returns a valid move or None
+
+*For any* board state where the computer has at least one valid move, `best_move(session, depth)` should return a `MoveRequest` whose `to_position` is in the valid moves list for the selected piece. When no moves are available, it should return `None`.
+
+**Validates: Requirements 19.1, 19.5**
+
+---
+
+### Property 30: pvc response reflects both moves
+
+*For any* `pvc` session where the player's move does not end the game, the `SessionResponse` returned by `POST /game/{session_id}/move` should reflect the board state after both the player's move and the computer's move have been applied, and `current_turn` should be `"player"`.
+
+**Validates: Requirements 19.1, 19.6**
+
+---
+
 ## Error Handling
 
 ### Backend
@@ -540,6 +709,15 @@ Each property test must be tagged with a comment referencing the design property
 | P12 | Create game entity; fetch artwork before and after; assert fields unchanged |
 | P13 | For each element pair in ELEMENTAL_MATRIX, generate random positive base_atk; assert calculate_damage returns base_atk * expected_multiplier; also test same-element and Neutral pairs return 1x |
 | P14 | Generate random element pairs and positive base_atk; assert calculate_damage > 0 |
+| P22 | Generate valid `SessionCreateRequest` with existing pieces; POST `/game/session`; assert `board_state` contains all pieces with correct initial HP, `is_evolved=false`, and positions in correct rows |
+| P23 | For random board states, call `GET /game/{id}/valid-moves/{pid}`; assert returned moves match checkers rules (forward diagonals, backward if evolved, jump if opponent in path) |
+| P24 | Apply random valid moves; assert no two pieces share a position, moved piece is at destination, piece count invariant holds, `current_turn` switched |
+| P25 | Apply random attack moves; assert target HP reduced by `calculate_damage` result; assert target absent iff resulting HP ≤ 0 |
+| P26 | Move player piece to row 0 or opponent piece to row 7; assert `is_evolved=true` in response |
+| P27 | Generate moves where `to_position` is not in valid moves; assert HTTP 400 |
+| P28 | Submit move for piece belonging to the non-active player; assert HTTP 400 |
+| P29 | Generate board states with computer pieces; call `best_move`; assert returned move is in valid moves list or None when no moves exist |
+| P30 | In `pvc` session, apply player move that doesn't end game; assert response reflects both moves applied and `current_turn="player"` |
 
 ### Frontend Testing
 

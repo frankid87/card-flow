@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import sqlalchemy as sa
+from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
 
@@ -33,6 +34,7 @@ class GamePiece(SQLModel, table=True):
     element: str  # Fire | Grass | Water | Electric | Air | Earth | Neutral
     base_hp: int
     base_atk: int
+    owner_user_id: Optional[str] = None  # None = global/system piece
 
 
 class GameState(SQLModel, table=True):
@@ -48,3 +50,28 @@ class GameState(SQLModel, table=True):
     )
     current_hp: int
     is_evolved: bool = Field(default=False)
+
+
+class GameSession(SQLModel, table=True):
+    __tablename__ = "game_sessions"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    game_mode: str
+    current_turn: str
+    winner: Optional[str] = None
+    board_state: list = Field(sa_column=Column(JSON))  # list of BoardPieceState dicts
+    ai_depth: int = Field(default=3)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    player_user_id: Optional[str] = None
+    opponent_user_id: Optional[str] = None
+    status: str = Field(default="local")
+    difficulty: Optional[str] = None
+
+
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    username: str = Field(index=True, unique=True)
+    hashed_password: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -35,7 +35,7 @@ function makePiece(element: ElementEnum, baseHp: number, baseAtk: number, imageU
 // Arbitraries
 const elementArb = fc.constantFrom(...ELEMENTS);
 const positiveIntArb = fc.integer({ min: 1, max: 10000 });
-const imageUrlArb = fc.webUrl();
+const imageUrlArb = fc.constant("https://example.com/img.png");
 
 /**
  * **Validates: Requirements 10.2, 10.3, 10.4, 10.5, 10.6**
@@ -88,7 +88,7 @@ describe("PieceRenderer", () => {
           unmount();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });

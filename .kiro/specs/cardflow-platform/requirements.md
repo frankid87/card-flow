@@ -16,6 +16,14 @@ CardFlow is a full-stack web platform for creating and managing AI-generated gam
 - **Elemental_Matrix**: The full set of element interaction rules that determine the Elemental_Multiplier for any attacker/target element pair
 - **Game_State**: A transient record (scoped to a session) tracking `current_hp` and `is_evolved` for a Game_Piece during an active match
 - **Evolved**: The status of a Game_Piece that has reached the opponent's last row; an Evolved piece may move both forward and backward diagonally
+- **Game_Session**: A server-side record that holds the complete state of an active match, including the board positions, HP, and evolution status of all pieces for both players, identified by a `session_id`
+- **Session_Manager**: The backend service layer responsible for creating, retrieving, and mutating Game_Sessions
+- **Move**: A player action specifying a `piece_id` and a destination `[row, col]` coordinate on the board
+- **Valid_Move**: A Move that passes all server-side validation rules (correct turn, legal diagonal, no friendly-fire, within board bounds)
+- **Attack**: A Move whose destination square is occupied by an opponent's piece; resolved by computing damage and updating HP
+- **Game_Mode**: The type of match; either `pvp` (player vs player) or `pvc` (player vs computer)
+- **Minimax_AI**: The computer opponent algorithm that evaluates future board states up to a configurable depth and selects the move with the highest heuristic score
+- **AI_Depth**: The configurable look-ahead depth for the Minimax algorithm; higher values produce stronger play at the cost of computation time
 - **Database**: The PostgreSQL instance accessed via SQLAlchemy/SQLModel ORM
 - **ORM**: SQLAlchemy or SQLModel object-relational mapper
 - **Schema**: Pydantic models used for API request/response validation
@@ -233,3 +241,109 @@ CardFlow is a full-stack web platform for creating and managing AI-generated gam
 2. THE API SHALL separate route handlers into distinct router modules (one for `/artworks`, one for `/pieces`) registered on the main FastAPI application.
 3. THE UI SHALL use the Next.js 14 App Router with the Dashboard as the primary page and distinct component files for PieceRenderer and the Board.
 4. THE System SHALL include a `docker-compose.yml` at the monorepo root that orchestrates the backend and database services.
+
+---
+
+### Requirement 15: Game Session Creation
+
+**User Story:** As a player, I want to start a new game session with pieces assigned to both players, so that the backend tracks the full board state from the beginning of the match.
+
+#### Acceptance Criteria
+
+1. WHEN a `POST /game/session` request is received with a valid body specifying `player_piece_ids`, `opponent_piece_ids`, and `game_mode`, THE Session_Manager SHALL create a new Game_Session, assign initial board positions to all pieces, persist the session, and return a `SessionResponse` containing `session_id`, `game_mode`, `current_turn`, and the full initial `board_state` with HTTP 201.
+2. THE Session_Manager SHALL assign player pieces to rows 5–7 and opponent pieces to rows 0–2 of the 8×8 board at session creation.
+3. IF any `piece_id` in `player_piece_ids` or `opponent_piece_ids` does not reference an existing Game_Piece, THEN THE API SHALL return HTTP 404 with a JSON error body.
+4. THE Session_Manager SHALL set `current_turn` to `"player"` at session creation.
+5. WHEN `game_mode` is `"pvc"`, THE Session_Manager SHALL record that the opponent is controlled by the Minimax_AI.
+6. WHEN `game_mode` is `"pvp"`, THE Session_Manager SHALL record that both sides are controlled by human players.
+7. IF `game_mode` is not one of `"pvp"` or `"pvc"`, THEN THE API SHALL return HTTP 422 with a JSON validation error.
+
+---
+
+### Requirement 16: Game Session Retrieval
+
+**User Story:** As a frontend developer, I want to retrieve the current state of a game session, so that the UI can render the board accurately after any update.
+
+#### Acceptance Criteria
+
+1. WHEN a `GET /game/{session_id}` request is received, THE API SHALL return the current `SessionResponse` for that session with HTTP 200.
+2. IF `session_id` does not correspond to an existing Game_Session, THEN THE API SHALL return HTTP 404 with a JSON error body.
+3. THE `SessionResponse` SHALL include `session_id`, `game_mode`, `current_turn`, `winner` (null if game is ongoing), and `board_state` (a list of `BoardPieceState` objects each containing `piece_id`, `owner`, `position`, `current_hp`, and `is_evolved`).
+
+---
+
+### Requirement 17: Server-Side Move Validation and Application
+
+**User Story:** As a player, I want the backend to validate and apply my moves, so that illegal moves are rejected and the authoritative game state is always maintained server-side.
+
+#### Acceptance Criteria
+
+1. WHEN a `POST /game/{session_id}/move` request is received with a valid `MoveRequest` body specifying `piece_id` and `to_position`, THE Session_Manager SHALL validate the move, apply it to the Game_Session, and return the updated `SessionResponse` with HTTP 200.
+2. IF `session_id` does not correspond to an existing Game_Session, THEN THE API SHALL return HTTP 404 with a JSON error body.
+3. IF the `piece_id` in the `MoveRequest` does not belong to the player whose turn it is, THEN THE API SHALL return HTTP 400 with a JSON error body indicating it is not that player's turn.
+4. IF the `to_position` is not a Valid_Move for the specified piece, THEN THE API SHALL return HTTP 400 with a JSON error body describing the invalid move.
+5. WHEN a move lands on an empty square, THE Session_Manager SHALL update the piece's position in the Game_Session.
+6. WHEN a move lands on a square occupied by an opponent's piece (Attack), THE Session_Manager SHALL compute damage using `calculate_damage(attacker.element, target.element, attacker.base_atk)`, reduce the target's `current_hp` by that amount, and remove the target from the board if `current_hp` reaches zero or below.
+7. WHEN a piece reaches the opponent's last row after a move, THE Session_Manager SHALL set `is_evolved` to true for that piece.
+8. WHEN a move is applied, THE Session_Manager SHALL advance `current_turn` to the other player.
+9. WHEN all pieces belonging to one player are removed from the board, THE Session_Manager SHALL set `winner` to the opposing player and mark the game as finished.
+10. WHEN the game is finished, THE API SHALL return HTTP 400 for any subsequent move request on that session.
+
+---
+
+### Requirement 18: Valid Moves Query
+
+**User Story:** As a frontend developer, I want to query valid moves for a specific piece, so that the UI can highlight legal destination squares when a piece is selected.
+
+#### Acceptance Criteria
+
+1. WHEN a `GET /game/{session_id}/valid-moves/{piece_id}` request is received, THE API SHALL return a list of valid destination positions `[[row, col], ...]` for that piece in the current session state with HTTP 200.
+2. IF `session_id` does not correspond to an existing Game_Session, THEN THE API SHALL return HTTP 404 with a JSON error body.
+3. IF `piece_id` is not present on the board in the specified session, THEN THE API SHALL return HTTP 404 with a JSON error body.
+4. THE Session_Manager SHALL compute valid moves using the same rules as server-side move validation: diagonal-forward squares for normal pieces, diagonal-forward and diagonal-backward squares for Evolved pieces, with jump moves available when an opponent piece occupies the intermediate diagonal square and the landing square is empty.
+5. WHEN the game is finished, THE API SHALL return an empty list of valid moves.
+
+---
+
+### Requirement 19: Minimax AI Opponent
+
+**User Story:** As a player, I want to play against a computer opponent that uses the Minimax algorithm, so that single-player matches are challenging and strategically interesting.
+
+#### Acceptance Criteria
+
+1. WHEN a `POST /game/{session_id}/move` request is processed and `game_mode` is `"pvc"` and the player's move does not end the game, THE Session_Manager SHALL automatically compute and apply the computer's move using the Minimax_AI before returning the response.
+2. THE Minimax_AI SHALL evaluate board states using a heuristic that accounts for piece count, HP totals, and positional advancement for both sides.
+3. THE Minimax_AI SHALL search to a configurable AI_Depth; the default AI_Depth SHALL be 3.
+4. THE Minimax_AI SHALL use alpha-beta pruning to reduce the number of evaluated nodes.
+5. WHEN the Minimax_AI has no valid moves available, THE Session_Manager SHALL treat the computer's turn as a pass and advance `current_turn` back to the player.
+6. THE `SessionResponse` returned after a `pvc` move SHALL reflect the board state after both the player's move and the computer's move have been applied.
+
+---
+
+### Requirement 20: Frontend Refactoring — Pure Rendering Layer
+
+**User Story:** As a frontend developer, I want the Board component to delegate all game logic to the backend, so that the frontend is a pure rendering layer with no duplicated game rules.
+
+#### Acceptance Criteria
+
+1. THE Board SHALL remove all client-side game state management, move validation logic, damage calculation, and turn management.
+2. WHEN the game page loads, THE UI SHALL call `POST /game/session` to create a new session and store the returned `session_id`.
+3. WHEN a piece is selected, THE UI SHALL call `GET /game/{session_id}/valid-moves/{piece_id}` and highlight the returned squares.
+4. WHEN a player clicks a highlighted destination square, THE UI SHALL call `POST /game/{session_id}/move` with the `piece_id` and `to_position`, then re-render the board from the returned `SessionResponse`.
+5. THE UI SHALL derive all displayed state (piece positions, HP, evolution status, current turn, winner) exclusively from the `SessionResponse` returned by the API.
+6. IF any API call fails, THEN THE UI SHALL display an error message without crashing the page.
+7. WHILE an API call is in progress, THE UI SHALL disable board interaction to prevent duplicate submissions.
+
+---
+
+### Requirement 21: Game Session Schema Extensions
+
+**User Story:** As a developer, I want well-defined Pydantic schemas for all game session API inputs and outputs, so that the session endpoints are type-safe and self-documenting.
+
+#### Acceptance Criteria
+
+1. THE Schema SHALL define a `SessionCreateRequest` model requiring `player_piece_ids` (list of UUIDs), `opponent_piece_ids` (list of UUIDs), and `game_mode` (one of `"pvp"`, `"pvc"`), with an optional `ai_depth` (positive integer, default 3).
+2. THE Schema SHALL define a `BoardPieceState` model containing `piece_id` (UUID), `owner` (one of `"player"`, `"opponent"`), `position` (list of two integers `[row, col]`), `current_hp` (non-negative integer), and `is_evolved` (boolean).
+3. THE Schema SHALL define a `SessionResponse` model containing `session_id` (UUID), `game_mode` (string), `current_turn` (one of `"player"`, `"opponent"`), `winner` (nullable string), and `board_state` (list of `BoardPieceState`).
+4. THE Schema SHALL define a `MoveRequest` model requiring `piece_id` (UUID) and `to_position` (list of two integers `[row, col]`).
+5. THE Schema SHALL define a `ValidMovesResponse` model containing `piece_id` (UUID) and `moves` (list of `[row, col]` pairs).

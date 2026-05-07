@@ -2,12 +2,18 @@ import os
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel import SQLModel, create_engine
+from pydantic import BaseModel
+from sqlmodel import SQLModel, Session, create_engine, select
 from starlette.responses import JSONResponse
 
 from app.routers.artworks import router as artworks_router
 from app.routers.pieces import router as pieces_router
-from app.auth import create_access_token, verify_token, VALID_API_KEY
+from app.routers.game import router as game_router
+from app.auth import (
+    create_access_token, verify_token, VALID_API_KEY,
+    hash_password, verify_password,
+)
+from app.models import User
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
@@ -17,6 +23,12 @@ if not DATABASE_URL:
     )
 
 engine = create_engine(DATABASE_URL)
+
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
 
 app = FastAPI(title="CardFlow API")
 
@@ -46,12 +58,38 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/auth/register", status_code=201)
+def register(body: RegisterRequest, db: Session = Depends(get_session)):
+    """Register a new user account."""
+    if not body.username or not body.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+    existing = db.exec(select(User).where(User.username == body.username)).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Username already taken")
+    user = User(username=body.username, hashed_password=hash_password(body.password))
+    db.add(user)
+    db.commit()
+    return {"username": user.username}
+
+
 @app.post("/token")
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Exchange API key for a JWT. Use the API key as the password field."""
-    if form_data.password != VALID_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    token = create_access_token({"sub": "cardflow-client"})
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_session)):
+    """Login with username + password, or use the legacy API key as password."""
+    # Legacy API key login (admin / backward compat)
+    if form_data.password == VALID_API_KEY:
+        token = create_access_token({"sub": form_data.username or "cardflow-client"})
+        return {"access_token": token, "token_type": "bearer"}
+
+    # Per-user login
+    user = db.exec(select(User).where(User.username == form_data.username)).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = create_access_token({"sub": user.username})
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -63,3 +101,4 @@ def health():
 # Protected routers
 app.include_router(artworks_router, dependencies=[Depends(verify_token)])
 app.include_router(pieces_router, dependencies=[Depends(verify_token)])
+app.include_router(game_router)

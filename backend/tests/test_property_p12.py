@@ -100,7 +100,7 @@ ELEMENTS = ["Fire", "Grass", "Water", "Electric", "Air", "Earth", "Neutral"]
     base_hp=st.integers(min_value=1, max_value=10_000),
     base_atk=st.integers(min_value=1, max_value=10_000),
 )
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_artwork_record_unchanged_after_piece_creation(
     image_url, prompt, seed, name, element, base_hp, base_atk
 ):

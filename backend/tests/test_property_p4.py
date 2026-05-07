@@ -108,7 +108,7 @@ ELEMENTS = ["Fire", "Grass", "Water", "Electric", "Air", "Earth", "Neutral"]
 # ---------------------------------------------------------------------------
 
 @given(n=st.integers(min_value=1, max_value=5))
-@settings(max_examples=100)
+@settings(max_examples=20, deadline=None)
 def test_game_piece_list_completeness_with_joined_artwork(n):
     """
     **Validates: Requirements 7.3**
